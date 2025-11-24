@@ -56,18 +56,6 @@ elif menu == "Visualizations":
     if viz_type == "Correlation Heatmap":
     st.subheader("Correlation Heatmap")
 
-    # Select numeric columns
-    numeric_data = data.select_dtypes(include=['number'])
-
-    # Remove columns that are all NaN or constant values
-    numeric_data = numeric_data.dropna(axis=1, how="all")  # remove all-NaN columns
-    numeric_data = numeric_data.loc[:, numeric_data.apply(pd.Series.nunique) > 1]  # remove constant columns
-
-    if numeric_data.shape[1] < 2:
-        st.warning("Not enough valid numeric columns to generate a correlation heatmap.")
-    else:
-        corr = numeric_data.corr()
-
         plt.figure(figsize=(10, 6))
         sns.heatmap(corr, annot=True, cmap="coolwarm")
         st.pyplot()
