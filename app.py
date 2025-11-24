@@ -8,7 +8,7 @@ st.title("Air Pollution Indicators Dashboard (Bhutan)")
 
 @st.cache_resource
 def load_data():
-    file_path = "/mnt/data/air_pollution_indicators_btn.csv"
+    file_path = "data/air_pollution_indicators_btn.csv"
     df = pd.read_csv(file_path)
     return df
 
