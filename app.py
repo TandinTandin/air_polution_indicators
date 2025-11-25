@@ -1,14 +1,13 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
+from sklearn.ensemble import RandomForestClassifier
 import matplotlib.pyplot as plt
 import seaborn as sns
 
 st.title("Air Pollution Indicators Dashboard (Bhutan)")
 
-# --------------------------
 # Load Dataset
-# --------------------------
 @st.cache_resource
 def load_data():
     file_path = "data/air_pollution_indicators_btn.csv"
