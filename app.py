@@ -6,7 +6,10 @@ from io import BytesIO
 
 # ... keep everything above the visualization menu unchanged ...
 
-elif menu == "Visualizations":
+# --------------------------
+# Visualizations
+# --------------------------
+if menu == "Visualizations":
     st.header("Visualizations")
     numeric_data = data.select_dtypes(include=['number'])
 
@@ -15,63 +18,48 @@ elif menu == "Visualizations":
         st.stop()
 
     chart_type = st.selectbox(
-        "Select Chart Type:",
-        ["Correlation Heatmap", "Scatter Plot", "Line Graph", "Histogram"]
+        "Select Chart:",
+        ["Scatter Plot", "Line Graph", "Histogram"]
     )
 
-    # -----------------------
-    # Scatter Plot
-    # -----------------------
+    # ---- SCATTER ----
     if chart_type == "Scatter Plot":
         st.subheader("Scatter Plot")
-        col1, col2 = st.columns([1, 1])
-
-        with col1:
-            x_col = st.selectbox("Select X-axis", numeric_data.columns)
-
-        with col2:
-            y_col = st.selectbox("Select Y-axis", numeric_data.columns)
+        x_col = st.sidebar.selectbox("X-axis", numeric_data.columns)
+        y_col = st.sidebar.selectbox("Y-axis", numeric_data.columns)
 
         fig, ax = plt.subplots(figsize=(10, 6))
         ax.scatter(numeric_data[x_col], numeric_data[y_col])
-        ax.set_xlabel(x_col, fontsize=14, labelpad=10)
-        ax.set_ylabel(y_col, fontsize=14, labelpad=10)
-        ax.set_title(f"{y_col} vs {x_col}", fontsize=16, pad=15)
+        ax.set_xlabel(x_col, fontsize=13, labelpad=8)
+        ax.set_ylabel(y_col, fontsize=13, labelpad=8)
+        ax.set_title(f"{y_col} vs {x_col}", fontsize=15, pad=12)
         ax.grid(True)
-
         st.pyplot(fig, use_container_width=True)
 
-    # -----------------------
-    # Line Graph
-    # -----------------------
+    # ---- LINE ----
     elif chart_type == "Line Graph":
         st.subheader("Line Graph")
-
-        line_col = st.selectbox("Select Numeric Column for Line Graph", numeric_data.columns)
+        line_col = st.sidebar.selectbox("Column", numeric_data.columns)
 
         fig, ax = plt.subplots(figsize=(12, 5))
         ax.plot(numeric_data[line_col])
-        ax.set_xlabel("Index", fontsize=14, labelpad=8)
-        ax.set_ylabel(line_col, fontsize=14, labelpad=8)
-        ax.set_title(f"Trend of {line_col}", fontsize=16, pad=12)
+        ax.set_xlabel("Index", fontsize=12, labelpad=6)
+        ax.set_ylabel(line_col, fontsize=13, labelpad=6)
+        ax.set_title(f"Trend of {line_col}", fontsize=14, pad=10)
         ax.grid(True)
-
         st.pyplot(fig, use_container_width=True)
 
-    # -----------------------
-    # Histogram
-    # -----------------------
+    # ---- HISTOGRAM ----
     elif chart_type == "Histogram":
         st.subheader("Histogram")
-        hist_col = st.selectbox("Select Numeric Column for Histogram", numeric_data.columns)
+        hist_col = st.sidebar.selectbox("Column", numeric_data.columns)
 
         fig, ax = plt.subplots(figsize=(9, 5))
-        ax.hist(numeric_data[hist_col].dropna(), bins=30)
-        ax.set_xlabel(hist_col, fontsize=14, labelpad=10)
-        ax.set_ylabel("Frequency", fontsize=14, labelpad=10)
-        ax.set_title(f"Distribution of {hist_col}", fontsize=16, pad=15)
+        ax.hist(numeric_data[hist_col].dropna(), bins=25)
+        ax.set_xlabel(hist_col, fontsize=13, labelpad=8)
+        ax.set_ylabel("Frequency", fontsize=13, labelpad=8)
+        ax.set_title(f"Distribution of {hist_col}", fontsize=14, pad=12)
         ax.grid(True)
-
         st.pyplot(fig, use_container_width=True)
 
     # -----------------------
