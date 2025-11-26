@@ -7,209 +7,535 @@ import seaborn as sns
 from io import BytesIO
 import requests
 import json
+from datetime import datetime, timedelta
+import plotly.express as px
+import plotly.graph_objects as go
+from plotly.subplots import make_subplots
 
-st.set_page_config(page_title="Air Pollution Dashboard (HDX Data)", layout="wide")
-st.title("🌍 Air Pollution Indicators Dashboard — HDX Data Source")
+st.set_page_config(page_title="WHO Health Data Dashboard", layout="wide")
+st.title("🌍 WHO Health Indicators Dashboard — China")
 
 # --------------------------
-# HDX Data Fetcher
+# WHO API Data Fetcher
 # --------------------------
 @st.cache_resource(ttl=3600)  # Cache for 1 hour
-def fetch_hdx_datasets(query="air pollution", limit=10):
-    """Fetch datasets from HDX API"""
+def fetch_who_indicators(country_code="CHN", limit=50):
+    """Fetch available indicators from WHO API for China"""
     try:
-        url = "https://data.who.int/countries/064/api/3/action/package_search"
-        params = {
-            'q': query,
-            'rows': limit
-        }
-        response = requests.get(url, params=params, timeout=30)
-        response.raise_for_status()
-        data = response.json()
-        return data['result']['results']
-    except Exception as e:
-        st.error(f"Failed to fetch from HDX API: {e}")
-        return None
-
-@st.cache_resource(ttl=3600)
-def fetch_hdx_dataset_resources(package_id):
-    """Fetch resources for a specific dataset"""
-    try:
-        url = f"https://data.humdata.org/api/3/action/package_show?id={package_id}"
+        url = f"https://ghoapi.azureedge.net/api/Indicator"
         response = requests.get(url, timeout=30)
         response.raise_for_status()
         data = response.json()
-        return data['result']['resources']
+        
+        # Filter for relevant health indicators
+        indicators = data.get('value', [])
+        health_keywords = ['air', 'pollution', 'mortality', 'death', 'health', 'environment', 'quality', 'pm2.5', 'pm10']
+        
+        relevant_indicators = [
+            ind for ind in indicators 
+            if any(keyword in ind.get('IndicatorName', '').lower() for keyword in health_keywords)
+        ][:limit]
+        
+        return relevant_indicators
     except Exception as e:
-        st.error(f"Failed to fetch dataset resources: {e}")
+        st.error(f"Failed to fetch WHO indicators: {e}")
         return None
 
 @st.cache_resource(ttl=3600)
-def load_data_from_url(url, file_type='csv'):
-    """Load data from a URL"""
-    try:
-        if file_type == 'csv':
-            return pd.read_csv(url)
-        elif file_type in ['xlsx', 'xls']:
-            return pd.read_excel(url)
-        else:
-            st.error(f"Unsupported file type: {file_type}")
-            return None
-    except Exception as e:
-        st.error(f"Failed to load data from URL: {e}")
+def fetch_who_data(country_code="CHN", indicator_codes=None):
+    """Fetch WHO data for specific country and indicators"""
+    if indicator_codes is None:
+        indicator_codes = ["AIR_1", "AIR_2", "AIR_3"]  # Default air quality indicators
+    
+    all_data = []
+    
+    for indicator_code in indicator_codes:
+        try:
+            url = f"https://ghoapi.azureedge.net/api/{indicator_code}"
+            params = {'$filter': f"SpatialDim eq '{country_code}'"}
+            
+            response = requests.get(url, params=params, timeout=30)
+            response.raise_for_status()
+            data = response.json()
+            
+            if data.get('value'):
+                df = pd.DataFrame(data['value'])
+                df['IndicatorCode'] = indicator_code
+                all_data.append(df)
+                
+        except Exception as e:
+            st.warning(f"Could not fetch data for {indicator_code}: {e}")
+            continue
+    
+    if all_data:
+        return pd.concat(all_data, ignore_index=True)
+    else:
         return None
 
+@st.cache_resource(ttl=3600)
+def fetch_who_country_data(country_code="CHN"):
+    """Fetch comprehensive WHO data for China with multiple health indicators"""
+    
+    # Common WHO indicator codes for air pollution and health
+    air_quality_indicators = [
+        "AIR_1",    # Ambient air pollution
+        "AIR_2",    # Household air pollution
+        "AIR_3",    # Air pollution mean annual exposure
+        "AIR_4",    # Air pollution in cities
+        "SDG_3_9_1", # Mortality from air pollution
+    ]
+    
+    health_indicators = [
+        "MDG_0000000026",  # Under-five mortality
+        "MDG_0000000026",  # Infant mortality
+        "NCD_0002",        # Cardiovascular diseases
+        "NCD_0003",        # Cancer
+        "NCD_0004",        # Chronic respiratory diseases
+    ]
+    
+    # Try to fetch air quality data first
+    data = fetch_who_data(country_code, air_quality_indicators)
+    
+    if data is None or data.empty:
+        # Fallback: create sample data for demonstration
+        st.info("Using demonstration data - real WHO API might be temporarily unavailable")
+        return create_demo_data()
+    
+    return data
+
+def create_demo_data():
+    """Create demonstration data when WHO API is unavailable"""
+    years = list(range(2000, 2023))
+    
+    demo_data = []
+    indicators = {
+        'PM2.5_Exposure': {'trend': 'decreasing', 'base': 65},
+        'PM10_Exposure': {'trend': 'decreasing', 'base': 120},
+        'Air_Pollution_Mortality': {'trend': 'decreasing', 'base': 150},
+        'Respiratory_Diseases': {'trend': 'increasing', 'base': 45},
+        'Cardiovascular_Mortality': {'trend': 'stable', 'base': 280}
+    }
+    
+    for year in years:
+        for indicator, config in indicators.items():
+            if config['trend'] == 'decreasing':
+                value = config['base'] * (0.97 ** (year - 2000))
+            elif config['trend'] == 'increasing':
+                value = config['base'] * (1.02 ** (year - 2000))
+            else:
+                value = config['base'] + np.random.normal(0, 5)
+            
+            # Add some random variation
+            value += np.random.normal(0, value * 0.1)
+            
+            demo_data.append({
+                'IndicatorCode': indicator,
+                'TimeDim': year,
+                'NumericValue': max(0, value),
+                'Value': str(round(value, 2)),
+                'SpatialDim': 'CHN',
+                'IndicatorName': indicator.replace('_', ' ')
+            })
+    
+    return pd.DataFrame(demo_data)
+
 # --------------------------
-# Data loader (HDX, upload, or local)
+# Data Processing Functions
 # --------------------------
+def process_who_data(raw_data):
+    """Process and clean WHO data"""
+    if raw_data is None:
+        return None
+    
+    df = raw_data.copy()
+    
+    # Convert numeric columns
+    numeric_columns = ['NumericValue', 'TimeDim']
+    for col in numeric_columns:
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors='coerce')
+    
+    # Extract year from date if available
+    if 'TimeDim' in df.columns:
+        df['Year'] = df['TimeDim']
+    
+    # Handle different value columns
+    if 'Value' in df.columns:
+        df['Value'] = pd.to_numeric(df['Value'], errors='coerce')
+    
+    # Clean indicator names
+    if 'IndicatorName' in df.columns:
+        df['IndicatorName'] = df['IndicatorName'].fillna('Unknown Indicator')
+    
+    return df
+
+# --------------------------
+# Data Loader
+# --------------------------
+st.sidebar.header("🌐 Data Source Configuration")
+
 data_source = st.sidebar.radio(
     "Choose data source:",
-    ["HDX API", "Upload CSV", "Local File"]
+    ["WHO API - China", "Upload Custom Data", "Sample Demo Data"]
 )
 
 data = None
 
-if data_source == "HDX API":
-    st.sidebar.header("HDX Data Search")
+if data_source == "WHO API - China":
+    st.sidebar.subheader("WHO China Data")
     
-    # Search parameters
-    search_query = st.sidebar.text_input("Search HDX datasets", "air pollution")
-    search_limit = st.sidebar.slider("Max results", 5, 50, 10)
+    country_name = "China"
+    country_code = "CHN"
     
-    if st.sidebar.button("Search HDX"):
-        with st.spinner("Searching HDX datasets..."):
-            datasets = fetch_hdx_datasets(search_query, search_limit)
-            
-        if datasets:
-            st.sidebar.success(f"Found {len(datasets)} datasets")
-            
-            # Display dataset options
-            dataset_options = {}
-            for dataset in datasets:
-                title = dataset.get('title', 'Untitled')
-                org = dataset.get('organization', {}).get('title', 'Unknown')
-                dataset_options[f"{title} ({org})"] = dataset
-            
-            selected_dataset_name = st.sidebar.selectbox(
-                "Select dataset:",
-                list(dataset_options.keys())
-            )
-            
-            if selected_dataset_name:
-                selected_dataset = dataset_options[selected_dataset_name]
-                resources = fetch_hdx_dataset_resources(selected_dataset['id'])
-                
-                if resources:
-                    # Filter for data resources (CSV, Excel)
-                    data_resources = [
-                        r for r in resources 
-                        if r.get('format', '').lower() in ['csv', 'xlsx', 'xls']
-                    ]
-                    
-                    if data_resources:
-                        resource_options = {
-                            f"{r.get('name', r.get('url', 'Unknown'))} ({r.get('format', 'unknown')})": r 
-                            for r in data_resources
-                        }
-                        
-                        selected_resource_name = st.sidebar.selectbox(
-                            "Select data resource:",
-                            list(resource_options.keys())
-                        )
-                        
-                        if selected_resource_name and st.sidebar.button("Load Data"):
-                            selected_resource = resource_options[selected_resource_name]
-                            file_type = selected_resource.get('format', '').lower()
-                            data_url = selected_resource['url']
-                            
-                            with st.spinner(f"Loading data from {data_url}..."):
-                                data = load_data_from_url(data_url, file_type)
-                                
-                            if data is not None:
-                                st.success(f"✅ Successfully loaded dataset: {selected_dataset['title']}")
-                                st.info(f"📊 Shape: {data.shape} | 📈 Columns: {len(data.columns)}")
-                    
-                    else:
-                        st.sidebar.warning("No CSV or Excel resources found in this dataset")
-                
-                # Display dataset info
-                with st.expander("📋 Dataset Information"):
-                    st.write(f"**Title:** {selected_dataset.get('title', 'N/A')}")
-                    st.write(f"**Organization:** {selected_dataset.get('organization', {}).get('title', 'N/A')}")
-                    st.write(f"**Description:** {selected_dataset.get('notes', 'No description available')}")
-                    st.write(f"**Update Frequency:** {selected_dataset.get('data_update_frequency', 'N/A')}")
-                    st.write(f"**Last Modified:** {selected_dataset.get('last_modified', 'N/A')}")
-                    
-                    if resources:
-                        st.write("**Available Resources:**")
-                        for resource in resources:
-                            st.write(f"- {resource.get('name', 'Unnamed')} ({resource.get('format', 'unknown format')})")
+    if st.sidebar.button("Fetch WHO Data", type="primary"):
+        with st.spinner("Fetching latest WHO health data for China..."):
+            raw_data = fetch_who_country_data(country_code)
+            data = process_who_data(raw_data)
+        
+        if data is not None:
+            st.sidebar.success(f"✅ WHO data loaded for {country_name}")
+            st.sidebar.write(f"📊 Indicators: {data['IndicatorCode'].nunique()}")
+            st.sidebar.write(f"📅 Time range: {int(data['Year'].min())}-{int(data['Year'].max())}")
+        else:
+            st.sidebar.error("❌ Failed to fetch WHO data")
 
-elif data_source == "Upload CSV":
-    st.sidebar.header("Upload Data")
-    uploaded = st.sidebar.file_uploader("Upload CSV file", type=["csv"])
-    if uploaded is not None:
+elif data_source == "Upload Custom Data":
+    st.sidebar.subheader("Upload Data")
+    uploaded_file = st.sidebar.file_uploader("Upload CSV file", type=["csv"])
+    if uploaded_file is not None:
         try:
-            data = pd.read_csv(uploaded)
-            st.sidebar.success("✅ Uploaded CSV loaded successfully")
+            data = pd.read_csv(uploaded_file)
+            st.sidebar.success("✅ Custom data loaded successfully")
         except Exception as e:
-            st.sidebar.error("❌ Failed to read uploaded CSV")
+            st.sidebar.error("❌ Failed to read uploaded file")
             st.sidebar.exception(e)
 
-else:  # Local File
-    st.sidebar.header("Local Data")
-    local_path = "data/air_pollution_indicators_btn.csv"
-    try:
-        data = pd.read_csv(local_path)
-        st.sidebar.success("✅ Local file loaded successfully")
-    except Exception as e:
-        st.sidebar.warning(f"⚠️ Local file not found at {local_path}")
+else:  # Sample Demo Data
+    st.sidebar.subheader("Demo Data")
+    if st.sidebar.button("Load Demonstration Data"):
+        with st.spinner("Loading demonstration data..."):
+            data = process_who_data(create_demo_data())
+        st.sidebar.success("✅ Demonstration data loaded")
 
 # Stop if no data loaded
 if data is None:
-    st.info("👆 Please select a data source and load data to continue")
+    st.info("""
+    ## 🌍 WHO Health Data Dashboard
+    
+    Welcome! This dashboard provides access to WHO health indicators for China, 
+    focusing on air pollution and related health metrics.
+    
+    **To get started:**
+    1. Select **"WHO API - China"** and click "Fetch WHO Data" for real data
+    2. Or use **"Sample Demo Data"** for demonstration purposes
+    3. Upload your own data with **"Upload Custom Data"**
+    
+    *Data source: [WHO Global Health Observatory](https://data.who.int/countries/064)*
+    """)
     st.stop()
 
 # --------------------------
-# Dataset info
+# Dataset Info
 # --------------------------
 st.sidebar.header("📊 Dataset Info")
-st.sidebar.write(f"**Rows:** {data.shape[0]:,}")
-st.sidebar.write(f"**Columns:** {data.shape[1]}")
-st.sidebar.write(f"**Memory usage:** {data.memory_usage(deep=True).sum() / 1024**2:.2f} MB")
+st.sidebar.write(f"**Records:** {data.shape[0]:,}")
+st.sidebar.write(f"**Indicators:** {data['IndicatorCode'].nunique() if 'IndicatorCode' in data.columns else 'N/A'}")
+st.sidebar.write(f"**Time span:** {int(data['Year'].min()) if 'Year' in data.columns else 'N/A'}-{int(data['Year'].max()) if 'Year' in data.columns else 'N/A'}")
 
 # --------------------------
 # Navigation
 # --------------------------
-menu = st.sidebar.selectbox("Navigate", ["Overview", "Data Explorer", "Visualizations", "HDX Search"])
+menu = st.sidebar.selectbox(
+    "Navigate", 
+    ["Dashboard", "Indicator Analysis", "Temporal Trends", "Comparative Analysis", "Data Explorer"]
+)
 
 # --------------------------
-# Overview
+# Dashboard Overview
 # --------------------------
-if menu == "Overview":
-    st.header("📋 Dataset Overview")
+if menu == "Dashboard":
+    st.header("🏠 WHO Health Data Dashboard - China")
     
-    col1, col2 = st.columns([2, 1])
+    # Key metrics
+    col1, col2, col3, col4 = st.columns(4)
     
     with col1:
-        st.subheader("Data Preview")
-        st.dataframe(data.head(200), use_container_width=True)
+        total_indicators = data['IndicatorCode'].nunique() if 'IndicatorCode' in data.columns else 'N/A'
+        st.metric("Total Indicators", total_indicators)
     
     with col2:
-        st.subheader("Basic Statistics")
-        st.metric("Total Entries", f"{data.shape[0]:,}")
-        st.metric("Total Features", f"{data.shape[1]}")
-        st.metric("Missing Values", f"{data.isna().sum().sum():,}")
-        st.metric("Duplicate Rows", f"{data.duplicated().sum():,}")
+        years_covered = f"{int(data['Year'].min())}-{int(data['Year'].max())}" if 'Year' in data.columns else 'N/A'
+        st.metric("Time Coverage", years_covered)
     
-    st.subheader("Column Information")
-    col_info = pd.DataFrame({
-        "Data Type": data.dtypes.astype(str),
-        "Missing Values": data.isna().sum(),
-        "Missing %": (data.isna().sum() / len(data) * 100).round(2),
-        "Unique Values": data.nunique(dropna=False)
-    })
-    st.dataframe(col_info, use_container_width=True)
+    with col3:
+        total_records = f"{data.shape[0]:,}"
+        st.metric("Total Records", total_records)
+    
+    with col4:
+        latest_year = int(data['Year'].max()) if 'Year' in data.columns else 'N/A'
+        st.metric("Latest Data Year", latest_year)
+    
+    # Recent trends visualization
+    st.subheader("📈 Recent Trends Overview")
+    
+    if 'IndicatorCode' in data.columns and 'Year' in data.columns and 'NumericValue' in data.columns:
+        # Get top indicators by recent values
+        recent_data = data[data['Year'] >= (data['Year'].max() - 5)]
+        top_indicators = recent_data.groupby('IndicatorCode')['NumericValue'].mean().nlargest(6).index.tolist()
+        
+        if top_indicators:
+            fig = make_subplots(
+                rows=2, cols=3,
+                subplot_titles=[f"Indicator {i+1}" for i in range(6)],
+                vertical_spacing=0.1
+            )
+            
+            for i, indicator in enumerate(top_indicators):
+                ind_data = data[data['IndicatorCode'] == indicator].sort_values('Year')
+                row = i // 3 + 1
+                col = i % 3 + 1
+                
+                fig.add_trace(
+                    go.Scatter(x=ind_data['Year'], y=ind_data['NumericValue'], 
+                              mode='lines+markers', name=indicator),
+                    row=row, col=col
+                )
+            
+            fig.update_layout(height=600, showlegend=False, title_text="Top Indicators Trend Analysis")
+            st.plotly_chart(fig, use_container_width=True)
+    
+    # Indicator distribution
+    st.subheader("📊 Indicators Overview")
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        if 'IndicatorCode' in data.columns:
+            indicator_counts = data['IndicatorCode'].value_counts().head(10)
+            fig = px.bar(
+                x=indicator_counts.values,
+                y=indicator_counts.index,
+                orientation='h',
+                title="Top 10 Indicators by Data Points",
+                labels={'x': 'Number of Records', 'y': 'Indicator Code'}
+            )
+            st.plotly_chart(fig, use_container_width=True)
+    
+    with col2:
+        if 'Year' in data.columns:
+            yearly_counts = data['Year'].value_counts().sort_index()
+            fig = px.line(
+                x=yearly_counts.index,
+                y=yearly_counts.values,
+                title="Data Coverage Over Time",
+                labels={'x': 'Year', 'y': 'Number of Records'}
+            )
+            st.plotly_chart(fig, use_container_width=True)
+
+# --------------------------
+# Indicator Analysis
+# --------------------------
+elif menu == "Indicator Analysis":
+    st.header("🔍 Indicator Analysis")
+    
+    if 'IndicatorCode' in data.columns:
+        available_indicators = data['IndicatorCode'].unique()
+        selected_indicator = st.selectbox("Select Indicator", available_indicators)
+        
+        if selected_indicator:
+            indicator_data = data[data['IndicatorCode'] == selected_indicator].sort_values('Year')
+            
+            col1, col2 = st.columns([2, 1])
+            
+            with col1:
+                st.subheader(f"Trend: {selected_indicator}")
+                
+                if len(indicator_data) > 1:
+                    fig = px.line(
+                        indicator_data, 
+                        x='Year', 
+                        y='NumericValue',
+                        title=f"{selected_indicator} Trend Over Time",
+                        markers=True
+                    )
+                    fig.update_layout(
+                        xaxis_title="Year",
+                        yaxis_title="Value",
+                        showlegend=False
+                    )
+                    st.plotly_chart(fig, use_container_width=True)
+                else:
+                    st.warning("Not enough data points for trend analysis")
+            
+            with col2:
+                st.subheader("Statistics")
+                
+                if not indicator_data.empty:
+                    latest_value = indicator_data.loc[indicator_data['Year'].idxmax(), 'NumericValue']
+                    avg_value = indicator_data['NumericValue'].mean()
+                    min_value = indicator_data['NumericValue'].min()
+                    max_value = indicator_data['NumericValue'].max()
+                    
+                    st.metric("Latest Value", f"{latest_value:.2f}")
+                    st.metric("Average", f"{avg_value:.2f}")
+                    st.metric("Minimum", f"{min_value:.2f}")
+                    st.metric("Maximum", f"{max_value:.2f}")
+                    
+                    # Yearly change if enough data
+                    if len(indicator_data) >= 2:
+                        recent_years = indicator_data.nlargest(2, 'Year')
+                        if len(recent_years) == 2:
+                            change = ((recent_years.iloc[0]['NumericValue'] - recent_years.iloc[1]['NumericValue']) / 
+                                     recent_years.iloc[1]['NumericValue'] * 100)
+                            st.metric("Yearly Change", f"{change:+.1f}%")
+            
+            # Distribution analysis
+            st.subheader("Distribution Analysis")
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                fig = px.histogram(
+                    indicator_data,
+                    x='NumericValue',
+                    title=f"Distribution of {selected_indicator}",
+                    nbins=20
+                )
+                st.plotly_chart(fig, use_container_width=True)
+            
+            with col2:
+                fig = px.box(
+                    indicator_data,
+                    y='NumericValue',
+                    title=f"Box Plot - {selected_indicator}"
+                )
+                st.plotly_chart(fig, use_container_width=True)
+
+# --------------------------
+# Temporal Trends
+# --------------------------
+elif menu == "Temporal Trends":
+    st.header("📅 Temporal Trends Analysis")
+    
+    if 'IndicatorCode' in data.columns and 'Year' in data.columns:
+        selected_indicators = st.multiselect(
+            "Select indicators to compare:",
+            data['IndicatorCode'].unique(),
+            default=data['IndicatorCode'].unique()[:3] if len(data['IndicatorCode'].unique()) >= 3 else data['IndicatorCode'].unique()
+        )
+        
+        if selected_indicators:
+            trend_data = data[data['IndicatorCode'].isin(selected_indicators)]
+            
+            # Normalize data for better comparison
+            trend_data_normalized = trend_data.copy()
+            for indicator in selected_indicators:
+                mask = trend_data_normalized['IndicatorCode'] == indicator
+                min_val = trend_data_normalized.loc[mask, 'NumericValue'].min()
+                max_val = trend_data_normalized.loc[mask, 'NumericValue'].max()
+                if max_val > min_val:
+                    trend_data_normalized.loc[mask, 'NormalizedValue'] = (
+                        (trend_data_normalized.loc[mask, 'NumericValue'] - min_val) / (max_val - min_val)
+                    )
+            
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                st.subheader("Original Values")
+                fig = px.line(
+                    trend_data,
+                    x='Year',
+                    y='NumericValue',
+                    color='IndicatorCode',
+                    title="Multiple Indicators Trend Comparison"
+                )
+                st.plotly_chart(fig, use_container_width=True)
+            
+            with col2:
+                st.subheader("Normalized Comparison (0-1 scale)")
+                fig = px.line(
+                    trend_data_normalized,
+                    x='Year',
+                    y='NormalizedValue',
+                    color='IndicatorCode',
+                    title="Normalized Trends for Better Comparison"
+                )
+                st.plotly_chart(fig, use_container_width=True)
+            
+            # Change analysis
+            st.subheader("Change Analysis")
+            change_data = []
+            
+            for indicator in selected_indicators:
+                ind_data = trend_data[trend_data['IndicatorCode'] == indicator].sort_values('Year')
+                if len(ind_data) >= 2:
+                    first_value = ind_data.iloc[0]['NumericValue']
+                    last_value = ind_data.iloc[-1]['NumericValue']
+                    change_pct = ((last_value - first_value) / first_value * 100) if first_value != 0 else 0
+                    
+                    change_data.append({
+                        'Indicator': indicator,
+                        'First Year': ind_data.iloc[0]['Year'],
+                        'Last Year': ind_data.iloc[-1]['Year'],
+                        'First Value': first_value,
+                        'Last Value': last_value,
+                        'Change %': change_pct
+                    })
+            
+            if change_data:
+                change_df = pd.DataFrame(change_data)
+                st.dataframe(change_df.style.format({
+                    'First Value': '{:.2f}',
+                    'Last Value': '{:.2f}',
+                    'Change %': '{:+.2f}%'
+                }), use_container_width=True)
+
+# --------------------------
+# Comparative Analysis
+# --------------------------
+elif menu == "Comparative Analysis":
+    st.header("⚖️ Comparative Analysis")
+    
+    if 'IndicatorCode' in data.columns and 'Year' in data.columns:
+        # Correlation analysis
+        st.subheader("Indicator Correlation Analysis")
+        
+        # Pivot data for correlation
+        pivot_data = data.pivot_table(
+            index='Year',
+            columns='IndicatorCode',
+            values='NumericValue',
+            aggfunc='mean'
+        ).corr()
+        
+        fig = px.imshow(
+            pivot_data,
+            title="Correlation Matrix Between Indicators",
+            aspect="auto",
+            color_continuous_scale="RdBu_r"
+        )
+        st.plotly_chart(fig, use_container_width=True)
+        
+        # Scatter plot matrix
+        st.subheader("Scatter Plot Matrix")
+        
+        # Select top 4 indicators for scatter matrix
+        top_indicators = data['IndicatorCode'].value_counts().head(4).index.tolist()
+        if len(top_indicators) >= 2:
+            scatter_data = data[data['IndicatorCode'].isin(top_indicators)]
+            pivot_scatter = scatter_data.pivot_table(
+                index='Year',
+                columns='IndicatorCode',
+                values='NumericValue',
+                aggfunc='mean'
+            ).reset_index().dropna()
+            
+            if len(pivot_scatter) >= 2:
+                fig = px.scatter_matrix(
+                    pivot_scatter,
+                    dimensions=top_indicators,
+                    title="Scatter Plot Matrix of Top Indicators"
+                )
+                st.plotly_chart(fig, use_container_width=True)
 
 # --------------------------
 # Data Explorer
@@ -220,317 +546,87 @@ elif menu == "Data Explorer":
     col1, col2 = st.columns(2)
     
     with col1:
-        st.subheader("Column Summary")
-        selected_col = st.selectbox("Select column:", data.columns)
-        if selected_col:
-            col_data = data[selected_col]
-            st.write(f"**Type:** {col_data.dtype}")
-            st.write(f"**Non-null values:** {col_data.count():,}")
-            st.write(f"**Null values:** {col_data.isna().sum():,}")
-            st.write(f"**Unique values:** {col_data.nunique():,}")
-            
-            if pd.api.types.is_numeric_dtype(col_data):
-                st.write(f"**Mean:** {col_data.mean():.2f}")
-                st.write(f"**Std Dev:** {col_data.std():.2f}")
-                st.write(f"**Min:** {col_data.min():.2f}")
-                st.write(f"**Max:** {col_data.max():.2f}")
+        st.subheader("Raw Data Preview")
+        st.dataframe(data.head(100), use_container_width=True)
     
     with col2:
-        st.subheader("Quick Stats")
-        if pd.api.types.is_numeric_dtype(data[selected_col]):
-            fig, ax = plt.subplots(figsize=(8, 4))
-            data[selected_col].hist(bins=30, ax=ax, alpha=0.7)
-            ax.set_title(f"Distribution of {selected_col}")
-            ax.grid(True, alpha=0.3)
-            st.pyplot(fig)
-        else:
-            value_counts = data[selected_col].value_counts().head(10)
-            fig, ax = plt.subplots(figsize=(8, 4))
-            value_counts.plot(kind='bar', ax=ax, alpha=0.7)
-            ax.set_title(f"Top 10 values in {selected_col}")
-            ax.tick_params(axis='x', rotation=45)
-            ax.grid(True, alpha=0.3)
-            st.pyplot(fig)
-
-# --------------------------
-# HDX Search Page
-# --------------------------
-elif menu == "HDX Search":
-    st.header("🔎 HDX Dataset Search")
+        st.subheader("Dataset Information")
+        
+        info_data = {
+            "Column Name": [],
+            "Data Type": [],
+            "Non-Null Count": [],
+            "Null Count": [],
+            "Unique Values": []
+        }
+        
+        for col in data.columns:
+            info_data["Column Name"].append(col)
+            info_data["Data Type"].append(str(data[col].dtype))
+            info_data["Non-Null Count"].append(data[col].count())
+            info_data["Null Count"].append(data[col].isnull().sum())
+            info_data["Unique Values"].append(data[col].nunique())
+        
+        info_df = pd.DataFrame(info_data)
+        st.dataframe(info_df, use_container_width=True)
     
-    col1, col2 = st.columns([2, 1])
+    # Data download
+    st.subheader("Data Export")
+    
+    col1, col2, col3 = st.columns(3)
     
     with col1:
-        search_query = st.text_input("Search term", "air quality pollution environmental")
-        search_limit = st.slider("Number of results", 5, 30, 10)
+        if st.button("Download Full Data as CSV"):
+            csv = data.to_csv(index=False)
+            st.download_button(
+                label="📥 Download CSV",
+                data=csv,
+                file_name="who_china_health_data.csv",
+                mime="text/csv"
+            )
     
     with col2:
-        st.write("###")
-        if st.button("Search HDX Catalog", type="primary"):
-            with st.spinner("Searching HDX datasets..."):
-                datasets = fetch_hdx_datasets(search_query, search_limit)
+        if st.button("Download Summary Statistics"):
+            numeric_cols = data.select_dtypes(include=[np.number]).columns
+            summary = data[numeric_cols].describe()
+            csv = summary.to_csv()
+            st.download_button(
+                label="📊 Download Summary",
+                data=csv,
+                file_name="who_data_summary.csv",
+                mime="text/csv"
+            )
+    
+    with col3:
+        if st.button("Download Processed Data"):
+            # Create a processed version
+            processed = data.copy()
+            if 'Year' in processed.columns and 'IndicatorCode' in processed.columns:
+                processed = processed.pivot_table(
+                    index='Year',
+                    columns='IndicatorCode',
+                    values='NumericValue',
+                    aggfunc='mean'
+                ).reset_index()
             
-            if datasets:
-                st.success(f"Found {len(datasets)} datasets")
-                
-                for i, dataset in enumerate(datasets, 1):
-                    with st.expander(f"📁 {dataset.get('title', 'Untitled')}"):
-                        col_a, col_b = st.columns([3, 1])
-                        
-                        with col_a:
-                            st.write(f"**Organization:** {dataset.get('organization', {}).get('title', 'N/A')}")
-                            st.write(f"**Description:** {dataset.get('notes', 'No description')[:200]}...")
-                            st.write(f"**Last Modified:** {dataset.get('last_modified', 'N/A')}")
-                        
-                        with col_b:
-                            if st.button(f"View Details", key=f"view_{i}"):
-                                st.session_state.selected_dataset = dataset
-                        
-                        # Show resource formats
-                        resources = dataset.get('resources', [])
-                        if resources:
-                            formats = list(set([r.get('format', 'unknown').upper() for r in resources]))
-                            st.write(f"**Formats:** {', '.join(formats)}")
-            else:
-                st.error("No datasets found or API error")
+            csv = processed.to_csv(index=False)
+            st.download_button(
+                label="🔄 Download Processed",
+                data=csv,
+                file_name="who_data_processed.csv",
+                mime="text/csv"
+            )
 
 # --------------------------
-# Visualizations (robust)
+# Footer
 # --------------------------
-elif menu == "Visualizations":
-    st.header("📈 Visualizations")
-    
-    # Controls
-    sample_size = st.sidebar.number_input("Max rows to plot (0 = full)", min_value=0, value=10000, step=1000)
-    use_sample = None if sample_size == 0 else int(sample_size)
-    
-    # Data preparation
-    numeric = data.select_dtypes(include=[np.number]).copy()
-    
-    if numeric.shape[1] == 0:
-        st.error("❌ No numeric columns detected. Visualizations require numeric data.")
-        st.stop()
-    
-    # Clean numeric data
-    before_cols = set(numeric.columns)
-    numeric = numeric.dropna(axis=1, how="all")
-    nunique = numeric.nunique(dropna=True)
-    constant_cols = nunique[nunique <= 1].index.tolist()
-    if constant_cols:
-        numeric = numeric.drop(columns=constant_cols)
-    
-    removed = list(before_cols - set(numeric.columns))
-    if removed:
-        st.info(f"ℹ️ Removed {len(removed)} invalid/constant/all-NaN columns: {removed}")
-    
-    if numeric.shape[1] < 1:
-        st.error("❌ No valid numeric columns remain after cleaning.")
-        st.stop()
-    
-    st.success(f"✅ Using {numeric.shape[1]} numeric columns for visualizations")
-    
-    # Helper function for sampling
-    def get_df_for_plot(df):
-        if use_sample is None or len(df) <= use_sample:
-            return df
-        else:
-            return df.sample(use_sample, random_state=42)
-    
-    viz_type = st.selectbox(
-        "Choose visualization type:",
-        ["Correlation Heatmap", "Scatter Plot", "Line Graph", "Histogram", "Box Plot"]
-    )
-    
-    # Correlation Heatmap
-    if viz_type == "Correlation Heatmap":
-        st.subheader("🔗 Correlation Heatmap")
-        method = st.selectbox("Correlation method", ["pearson", "spearman", "kendall"])
-        
-        try:
-            corr = get_df_for_plot(numeric).corr(method=method, numeric_only=True)
-            if corr.shape[0] < 2:
-                st.warning("Need at least 2 numeric columns for correlation.")
-            else:
-                fig, ax = plt.subplots(figsize=(12, 8))
-                mask = np.triu(np.ones_like(corr, dtype=bool))  # Mask upper triangle
-                sns.heatmap(corr, mask=mask, annot=True, fmt=".2f", cmap="RdBu_r", 
-                           center=0, vmin=-1, vmax=1, linewidths=0.5, ax=ax)
-                ax.set_title(f"Correlation Matrix ({method})", fontsize=14, pad=20)
-                plt.xticks(rotation=45, ha='right')
-                plt.yticks(rotation=0)
-                plt.tight_layout()
-                st.pyplot(fig)
-                
-                # Download option
-                buf = BytesIO()
-                corr.to_csv(buf)
-                st.download_button(
-                    "📥 Download correlation CSV", 
-                    buf.getvalue(), 
-                    "correlation_matrix.csv", 
-                    "text/csv"
-                )
-        except Exception as e:
-            st.error("Failed to compute or plot correlation.")
-            st.exception(e)
-    
-    # Scatter Plot
-    elif viz_type == "Scatter Plot":
-        st.subheader("📊 Scatter Plot")
-        col1, col2 = st.columns(2)
-        with col1:
-            x_col = st.selectbox("X axis", numeric.columns, index=0)
-        with col2:
-            y_col = st.selectbox("Y axis", numeric.columns, index=min(1, len(numeric.columns)-1))
-        
-        jitter = st.checkbox("Add jitter (for discrete data)", value=False)
-        size = st.slider("Marker size", 10, 200, 40)
-        alpha = st.slider("Transparency", 0.1, 1.0, 0.7)
-        
-        try:
-            df_plot = get_df_for_plot(numeric)
-            df_clean = df_plot[[x_col, y_col]].dropna()
-            
-            if len(df_clean) < 2:
-                st.warning("Not enough data points after removing NaN values.")
-            else:
-                fig, ax = plt.subplots(figsize=(10, 6))
-                
-                x = df_clean[x_col]
-                y = df_clean[y_col]
-                
-                if jitter:
-                    x_jitter = x + np.random.normal(0, x.std() * 0.01, len(x))
-                    y_jitter = y + np.random.normal(0, y.std() * 0.01, len(y))
-                    scatter = ax.scatter(x_jitter, y_jitter, s=size, alpha=alpha, cmap='viridis')
-                else:
-                    scatter = ax.scatter(x, y, s=size, alpha=alpha, cmap='viridis')
-                
-                # Add trend line
-                z = np.polyfit(x, y, 1)
-                p = np.poly1d(z)
-                ax.plot(x, p(x), "r--", alpha=0.8, linewidth=2)
-                
-                ax.set_xlabel(x_col, fontsize=12)
-                ax.set_ylabel(y_col, fontsize=12)
-                ax.set_title(f"{y_col} vs {x_col}", fontsize=14)
-                ax.grid(True, alpha=0.3)
-                st.pyplot(fig)
-                
-                # Statistics
-                correlation = df_clean[x_col].corr(df_clean[y_col])
-                st.info(f"**Correlation:** {correlation:.3f}")
-                
-        except Exception as e:
-            st.error("Failed to draw scatter plot")
-            st.exception(e)
-    
-    # Line Graph
-    elif viz_type == "Line Graph":
-        st.subheader("📈 Line Graph")
-        col = st.selectbox("Column to plot", numeric.columns)
-        
-        col1, col2 = st.columns(2)
-        with col1:
-            rolling = st.checkbox("Show rolling mean", value=False)
-        with col2:
-            window = st.slider("Rolling window", 2, 100, 7) if rolling else None
-        
-        try:
-            df_plot = get_df_for_plot(numeric)
-            series = df_plot[col].dropna().reset_index(drop=True)
-            
-            fig, ax = plt.subplots(figsize=(12, 5))
-            ax.plot(series.index, series.values, label=col, alpha=0.7, linewidth=1)
-            
-            if rolling and window:
-                rolling_mean = series.rolling(window=window, min_periods=1).mean()
-                ax.plot(series.index, rolling_mean.values, linestyle="--", 
-                       linewidth=2, label=f"Rolling mean (window={window})", color='red')
-            
-            ax.set_xlabel("Index")
-            ax.set_ylabel(col)
-            ax.set_title(f"Trend of {col}")
-            ax.legend()
-            ax.grid(True, alpha=0.3)
-            st.pyplot(fig)
-            
-        except Exception as e:
-            st.error("Failed to draw line graph")
-            st.exception(e)
-    
-    # Histogram
-    elif viz_type == "Histogram":
-        st.subheader("📊 Histogram")
-        col = st.selectbox("Column", numeric.columns)
-        
-        col1, col2 = st.columns(2)
-        with col1:
-            bins = st.slider("Number of bins", 5, 100, 30)
-        with col2:
-            density = st.checkbox("Show density curve", value=True)
-        
-        try:
-            arr = get_df_for_plot(numeric)[col].dropna()
-            if arr.empty:
-                st.warning("No non-null values for that column.")
-            else:
-                fig, ax = plt.subplots(figsize=(10, 5))
-                n, bins, patches = ax.hist(arr, bins=bins, density=density, alpha=0.7, edgecolor='black')
-                
-                if density:
-                    from scipy.stats import gaussian_kde
-                    kde = gaussian_kde(arr)
-                    x_vals = np.linspace(arr.min(), arr.max(), 100)
-                    ax.plot(x_vals, kde(x_vals), 'r-', linewidth=2, label='Density')
-                    ax.legend()
-                
-                ax.set_xlabel(col)
-                ax.set_ylabel("Density" if density else "Count")
-                ax.set_title(f"Distribution of {col}")
-                ax.grid(True, alpha=0.3)
-                st.pyplot(fig)
-                
-                # Statistics
-                st.info(f"**Skewness:** {arr.skew():.3f} | **Kurtosis:** {arr.kurtosis():.3f}")
-                
-        except Exception as e:
-            st.error("Failed to draw histogram")
-            st.exception(e)
-    
-    # Box Plot
-    elif viz_type == "Box Plot":
-        st.subheader("📦 Box Plots")
-        selected_cols = st.multiselect(
-            "Select columns for box plots:",
-            numeric.columns,
-            default=numeric.columns[:min(5, len(numeric.columns))]
-        )
-        
-        if selected_cols:
-            try:
-                df_plot = get_df_for_plot(numeric)[selected_cols]
-                fig, ax = plt.subplots(figsize=(12, 6))
-                df_plot.boxplot(ax=ax)
-                ax.set_title("Box Plots of Selected Columns")
-                ax.set_ylabel("Values")
-                ax.tick_params(axis='x', rotation=45)
-                ax.grid(True, alpha=0.3)
-                st.pyplot(fig)
-                
-                # Outlier information
-                st.subheader("Outlier Summary")
-                for col in selected_cols:
-                    Q1 = df_plot[col].quantile(0.25)
-                    Q3 = df_plot[col].quantile(0.75)
-                    IQR = Q3 - Q1
-                    lower_bound = Q1 - 1.5 * IQR
-                    upper_bound = Q3 + 1.5 * IQR
-                    outliers = df_plot[(df_plot[col] < lower_bound) | (df_plot[col] > upper_bound)][col]
-                    st.write(f"**{col}:** {len(outliers)} outliers")
-                    
-            except Exception as e:
-                st.error("Failed to draw box plots")
-                st.exception(e)
-
-st.caption("💡 Tip: Use the HDX Search to find and load air pollution datasets directly from the Humanitarian Data Exchange.")
+st.markdown("---")
+st.markdown(
+    """
+    <div style='text-align: center'>
+        <p>Data Source: <a href='https://data.who.int/countries/064'>WHO Global Health Observatory - China</a></p>
+        <p>This dashboard provides visualization and analysis of WHO health indicators for China</p>
+    </div>
+    """,
+    unsafe_allow_html=True
+)
