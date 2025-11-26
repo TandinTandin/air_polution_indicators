@@ -18,7 +18,7 @@ st.title("🌍 Air Pollution Indicators Dashboard — HDX Data Source")
 def fetch_hdx_datasets(query="air pollution", limit=10):
     """Fetch datasets from HDX API"""
     try:
-        url = "https://data.humdata.org/api/3/action/package_search"
+        url = "https://data.who.int/countries/064/api/3/action/package_search"
         params = {
             'q': query,
             'rows': limit
