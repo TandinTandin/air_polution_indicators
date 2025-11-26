@@ -1,6 +1,6 @@
-streamlit
 pandas
 numpy
-scikit-learn
 matplotlib
 seaborn
+scikit-learn
+streamlit>=1.22
