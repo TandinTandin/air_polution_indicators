@@ -284,25 +284,42 @@ if menu == "Dashboard":
         top_indicators = recent_data.groupby('IndicatorCode')['NumericValue'].mean().nlargest(6).index.tolist()
         
         if top_indicators:
-            fig = make_subplots(
-                rows=2, cols=3,
-                subplot_titles=[f"Indicator {i+1}" for i in range(6)],
-                vertical_spacing=0.1
-            )
-            
-            for i, indicator in enumerate(top_indicators):
-                ind_data = data[data['IndicatorCode'] == indicator].sort_values('Year')
-                row = i // 3 + 1
-                col = i % 3 + 1
-                
-                fig.add_trace(
-                    go.Scatter(x=ind_data['Year'], y=ind_data['NumericValue'], 
-                              mode='lines+markers', name=indicator),
-                    row=row, col=col
+            # Use matplotlib as fallback if Plotly has issues
+            try:
+                fig = make_subplots(
+                    rows=2, cols=3,
+                    subplot_titles=top_indicators,
+                    vertical_spacing=0.1
                 )
-            
-            fig.update_layout(height=600, showlegend=False, title_text="Top Indicators Trend Analysis")
-            st.plotly_chart(fig, use_container_width=True)
+                
+                for i, indicator in enumerate(top_indicators):
+                    ind_data = data[data['IndicatorCode'] == indicator].sort_values('Year')
+                    row = i // 3 + 1
+                    col = i % 3 + 1
+                    
+                    fig.add_trace(
+                        go.Scatter(x=ind_data['Year'], y=ind_data['NumericValue'], 
+                                  mode='lines+markers', name=indicator),
+                        row=row, col=col
+                    )
+                
+                fig.update_layout(height=600, showlegend=False, title_text="Top Indicators Trend Analysis")
+                st.plotly_chart(fig, use_container_width=True)
+            except Exception as e:
+                st.warning("Plotly chart failed, using matplotlib instead")
+                fig, axes = plt.subplots(2, 3, figsize=(15, 10))
+                axes = axes.flatten()
+                
+                for i, indicator in enumerate(top_indicators):
+                    if i < len(axes):
+                        ind_data = data[data['IndicatorCode'] == indicator].sort_values('Year')
+                        axes[i].plot(ind_data['Year'], ind_data['NumericValue'], marker='o')
+                        axes[i].set_title(indicator)
+                        axes[i].grid(True, alpha=0.3)
+                        axes[i].tick_params(axis='x', rotation=45)
+                
+                plt.tight_layout()
+                st.pyplot(fig)
     
     # Indicator distribution
     st.subheader("📊 Indicators Overview")
@@ -312,25 +329,45 @@ if menu == "Dashboard":
     with col1:
         if 'IndicatorCode' in data.columns:
             indicator_counts = data['IndicatorCode'].value_counts().head(10)
-            fig = px.bar(
-                x=indicator_counts.values,
-                y=indicator_counts.index,
-                orientation='h',
-                title="Top 10 Indicators by Data Points",
-                labels={'x': 'Number of Records', 'y': 'Indicator Code'}
-            )
-            st.plotly_chart(fig, use_container_width=True)
+            try:
+                fig = px.bar(
+                    x=indicator_counts.values,
+                    y=indicator_counts.index,
+                    orientation='h',
+                    title="Top 10 Indicators by Data Points",
+                    labels={'x': 'Number of Records', 'y': 'Indicator Code'}
+                )
+                st.plotly_chart(fig, use_container_width=True)
+            except Exception as e:
+                st.warning("Plotly bar chart failed, using matplotlib")
+                fig, ax = plt.subplots(figsize=(10, 6))
+                ax.barh(range(len(indicator_counts)), indicator_counts.values)
+                ax.set_yticks(range(len(indicator_counts)))
+                ax.set_yticklabels(indicator_counts.index)
+                ax.set_xlabel('Number of Records')
+                ax.set_title('Top 10 Indicators by Data Points')
+                st.pyplot(fig)
     
     with col2:
         if 'Year' in data.columns:
             yearly_counts = data['Year'].value_counts().sort_index()
-            fig = px.line(
-                x=yearly_counts.index,
-                y=yearly_counts.values,
-                title="Data Coverage Over Time",
-                labels={'x': 'Year', 'y': 'Number of Records'}
-            )
-            st.plotly_chart(fig, use_container_width=True)
+            try:
+                fig = px.line(
+                    x=yearly_counts.index,
+                    y=yearly_counts.values,
+                    title="Data Coverage Over Time",
+                    labels={'x': 'Year', 'y': 'Number of Records'}
+                )
+                st.plotly_chart(fig, use_container_width=True)
+            except Exception as e:
+                st.warning("Plotly line chart failed, using matplotlib")
+                fig, ax = plt.subplots(figsize=(10, 6))
+                ax.plot(yearly_counts.index, yearly_counts.values, marker='o')
+                ax.set_xlabel('Year')
+                ax.set_ylabel('Number of Records')
+                ax.set_title('Data Coverage Over Time')
+                ax.grid(True, alpha=0.3)
+                st.pyplot(fig)
 
 # --------------------------
 # Indicator Analysis
@@ -351,19 +388,29 @@ elif menu == "Indicator Analysis":
                 st.subheader(f"Trend: {selected_indicator}")
                 
                 if len(indicator_data) > 1:
-                    fig = px.line(
-                        indicator_data, 
-                        x='Year', 
-                        y='NumericValue',
-                        title=f"{selected_indicator} Trend Over Time",
-                        markers=True
-                    )
-                    fig.update_layout(
-                        xaxis_title="Year",
-                        yaxis_title="Value",
-                        showlegend=False
-                    )
-                    st.plotly_chart(fig, use_container_width=True)
+                    try:
+                        fig = px.line(
+                            indicator_data, 
+                            x='Year', 
+                            y='NumericValue',
+                            title=f"{selected_indicator} Trend Over Time",
+                            markers=True
+                        )
+                        fig.update_layout(
+                            xaxis_title="Year",
+                            yaxis_title="Value",
+                            showlegend=False
+                        )
+                        st.plotly_chart(fig, use_container_width=True)
+                    except Exception as e:
+                        st.warning("Plotly line chart failed, using matplotlib")
+                        fig, ax = plt.subplots(figsize=(10, 6))
+                        ax.plot(indicator_data['Year'], indicator_data['NumericValue'], marker='o', linewidth=2)
+                        ax.set_xlabel('Year')
+                        ax.set_ylabel('Value')
+                        ax.set_title(f'{selected_indicator} Trend Over Time')
+                        ax.grid(True, alpha=0.3)
+                        st.pyplot(fig)
                 else:
                     st.warning("Not enough data points for trend analysis")
             
@@ -394,21 +441,40 @@ elif menu == "Indicator Analysis":
             col1, col2 = st.columns(2)
             
             with col1:
-                fig = px.histogram(
-                    indicator_data,
-                    x='NumericValue',
-                    title=f"Distribution of {selected_indicator}",
-                    nbins=20
-                )
-                st.plotly_chart(fig, use_container_width=True)
+                try:
+                    fig = px.histogram(
+                        indicator_data,
+                        x='NumericValue',
+                        title=f"Distribution of {selected_indicator}",
+                        nbins=20
+                    )
+                    st.plotly_chart(fig, use_container_width=True)
+                except Exception as e:
+                    st.warning("Plotly histogram failed, using matplotlib")
+                    fig, ax = plt.subplots(figsize=(10, 6))
+                    ax.hist(indicator_data['NumericValue'], bins=20, alpha=0.7, edgecolor='black')
+                    ax.set_xlabel('Value')
+                    ax.set_ylabel('Frequency')
+                    ax.set_title(f'Distribution of {selected_indicator}')
+                    ax.grid(True, alpha=0.3)
+                    st.pyplot(fig)
             
             with col2:
-                fig = px.box(
-                    indicator_data,
-                    y='NumericValue',
-                    title=f"Box Plot - {selected_indicator}"
-                )
-                st.plotly_chart(fig, use_container_width=True)
+                try:
+                    fig = px.box(
+                        indicator_data,
+                        y='NumericValue',
+                        title=f"Box Plot - {selected_indicator}"
+                    )
+                    st.plotly_chart(fig, use_container_width=True)
+                except Exception as e:
+                    st.warning("Plotly box plot failed, using matplotlib")
+                    fig, ax = plt.subplots(figsize=(10, 6))
+                    ax.boxplot(indicator_data['NumericValue'].dropna())
+                    ax.set_ylabel('Value')
+                    ax.set_title(f'Box Plot - {selected_indicator}')
+                    ax.grid(True, alpha=0.3)
+                    st.pyplot(fig)
 
 # --------------------------
 # Temporal Trends
@@ -441,25 +507,42 @@ elif menu == "Temporal Trends":
             
             with col1:
                 st.subheader("Original Values")
-                fig = px.line(
-                    trend_data,
-                    x='Year',
-                    y='NumericValue',
-                    color='IndicatorCode',
-                    title="Multiple Indicators Trend Comparison"
-                )
-                st.plotly_chart(fig, use_container_width=True)
+                try:
+                    fig = px.line(
+                        trend_data,
+                        x='Year',
+                        y='NumericValue',
+                        color='IndicatorCode',
+                        title="Multiple Indicators Trend Comparison"
+                    )
+                    st.plotly_chart(fig, use_container_width=True)
+                except Exception as e:
+                    st.warning("Plotly multi-line chart failed, using matplotlib")
+                    fig, ax = plt.subplots(figsize=(10, 6))
+                    for indicator in selected_indicators:
+                        ind_data = trend_data[trend_data['IndicatorCode'] == indicator].sort_values('Year')
+                        ax.plot(ind_data['Year'], ind_data['NumericValue'], marker='o', label=indicator, linewidth=2)
+                    ax.set_xlabel('Year')
+                    ax.set_ylabel('Value')
+                    ax.set_title('Multiple Indicators Trend Comparison')
+                    ax.legend()
+                    ax.grid(True, alpha=0.3)
+                    st.pyplot(fig)
             
             with col2:
                 st.subheader("Normalized Comparison (0-1 scale)")
-                fig = px.line(
-                    trend_data_normalized,
-                    x='Year',
-                    y='NormalizedValue',
-                    color='IndicatorCode',
-                    title="Normalized Trends for Better Comparison"
-                )
-                st.plotly_chart(fig, use_container_width=True)
+                try:
+                    fig = px.line(
+                        trend_data_normalized,
+                        x='Year',
+                        y='NormalizedValue',
+                        color='IndicatorCode',
+                        title="Normalized Trends for Better Comparison"
+                    )
+                    st.plotly_chart(fig, use_container_width=True)
+                except Exception as e:
+                    st.warning("Plotly normalized chart failed")
+                    st.info("Normalized comparison not available with matplotlib fallback")
             
             # Change analysis
             st.subheader("Change Analysis")
@@ -488,54 +571,6 @@ elif menu == "Temporal Trends":
                     'Last Value': '{:.2f}',
                     'Change %': '{:+.2f}%'
                 }), use_container_width=True)
-
-# --------------------------
-# Comparative Analysis
-# --------------------------
-elif menu == "Comparative Analysis":
-    st.header("⚖️ Comparative Analysis")
-    
-    if 'IndicatorCode' in data.columns and 'Year' in data.columns:
-        # Correlation analysis
-        st.subheader("Indicator Correlation Analysis")
-        
-        # Pivot data for correlation
-        pivot_data = data.pivot_table(
-            index='Year',
-            columns='IndicatorCode',
-            values='NumericValue',
-            aggfunc='mean'
-        ).corr()
-        
-        fig = px.imshow(
-            pivot_data,
-            title="Correlation Matrix Between Indicators",
-            aspect="auto",
-            color_continuous_scale="RdBu_r"
-        )
-        st.plotly_chart(fig, use_container_width=True)
-        
-        # Scatter plot matrix
-        st.subheader("Scatter Plot Matrix")
-        
-        # Select top 4 indicators for scatter matrix
-        top_indicators = data['IndicatorCode'].value_counts().head(4).index.tolist()
-        if len(top_indicators) >= 2:
-            scatter_data = data[data['IndicatorCode'].isin(top_indicators)]
-            pivot_scatter = scatter_data.pivot_table(
-                index='Year',
-                columns='IndicatorCode',
-                values='NumericValue',
-                aggfunc='mean'
-            ).reset_index().dropna()
-            
-            if len(pivot_scatter) >= 2:
-                fig = px.scatter_matrix(
-                    pivot_scatter,
-                    dimensions=top_indicators,
-                    title="Scatter Plot Matrix of Top Indicators"
-                )
-                st.plotly_chart(fig, use_container_width=True)
 
 # --------------------------
 # Data Explorer
@@ -576,46 +611,43 @@ elif menu == "Data Explorer":
     col1, col2, col3 = st.columns(3)
     
     with col1:
-        if st.button("Download Full Data as CSV"):
-            csv = data.to_csv(index=False)
-            st.download_button(
-                label="📥 Download CSV",
-                data=csv,
-                file_name="who_china_health_data.csv",
-                mime="text/csv"
-            )
+        csv = data.to_csv(index=False)
+        st.download_button(
+            label="📥 Download Full Data as CSV",
+            data=csv,
+            file_name="who_china_health_data.csv",
+            mime="text/csv"
+        )
     
     with col2:
-        if st.button("Download Summary Statistics"):
-            numeric_cols = data.select_dtypes(include=[np.number]).columns
-            summary = data[numeric_cols].describe()
-            csv = summary.to_csv()
-            st.download_button(
-                label="📊 Download Summary",
-                data=csv,
-                file_name="who_data_summary.csv",
-                mime="text/csv"
-            )
+        numeric_cols = data.select_dtypes(include=[np.number]).columns
+        summary = data[numeric_cols].describe()
+        csv_summary = summary.to_csv()
+        st.download_button(
+            label="📊 Download Summary Statistics",
+            data=csv_summary,
+            file_name="who_data_summary.csv",
+            mime="text/csv"
+        )
     
     with col3:
-        if st.button("Download Processed Data"):
-            # Create a processed version
-            processed = data.copy()
-            if 'Year' in processed.columns and 'IndicatorCode' in processed.columns:
-                processed = processed.pivot_table(
-                    index='Year',
-                    columns='IndicatorCode',
-                    values='NumericValue',
-                    aggfunc='mean'
-                ).reset_index()
-            
-            csv = processed.to_csv(index=False)
-            st.download_button(
-                label="🔄 Download Processed",
-                data=csv,
-                file_name="who_data_processed.csv",
-                mime="text/csv"
-            )
+        # Create a processed version
+        processed = data.copy()
+        if 'Year' in processed.columns and 'IndicatorCode' in processed.columns:
+            processed = processed.pivot_table(
+                index='Year',
+                columns='IndicatorCode',
+                values='NumericValue',
+                aggfunc='mean'
+            ).reset_index()
+        
+        csv_processed = processed.to_csv(index=False)
+        st.download_button(
+            label="🔄 Download Processed Data",
+            data=csv_processed,
+            file_name="who_data_processed.csv",
+            mime="text/csv"
+        )
 
 # --------------------------
 # Footer
