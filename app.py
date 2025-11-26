@@ -25,12 +25,12 @@ if uploaded_file:
     st.success("CSV Uploaded Successfully!")
 else:
     local_path = "data/air_pollution_indicators_btn.csv"
-    data = load_data_local := load_data_local(local_path)
-    if load_data_local is None:
+    df_local = load_data_local(local_path)
+    if df_local is None:
         st.warning("No CSV uploaded and local file not found in repo. Please upload the dataset.")
         st.stop()
     else:
-        data = load_data_local
+        data = df_local
 
 # --------------------------
 # Sidebar Navigation
