@@ -7,6 +7,14 @@ from io import BytesIO
 # ... keep everything above the visualization menu unchanged ...
 
 # --------------------------
+# Sidebar Navigation
+# --------------------------
+menu = st.sidebar.selectbox(
+    "Navigate",
+    ["Dataset Overview", "Visualizations"]
+)
+
+# --------------------------
 # Visualizations
 # --------------------------
 if menu == "Visualizations":
@@ -17,10 +25,7 @@ if menu == "Visualizations":
         st.warning("No numeric columns found for visualization!")
         st.stop()
 
-    chart_type = st.selectbox(
-        "Select Chart:",
-        ["Scatter Plot", "Line Graph", "Histogram"]
-    )
+    chart_type = st.selectbox("Select Chart:", ["Scatter Plot", "Line Graph", "Histogram"])
 
     # ---- SCATTER ----
     if chart_type == "Scatter Plot":
@@ -39,28 +44,29 @@ if menu == "Visualizations":
     # ---- LINE ----
     elif chart_type == "Line Graph":
         st.subheader("Line Graph")
-        line_col = st.sidebar.selectbox("Column", numeric_data.columns)
+        col = st.sidebar.selectbox("Column", numeric_data.columns)
 
         fig, ax = plt.subplots(figsize=(12, 5))
-        ax.plot(numeric_data[line_col])
+        ax.plot(numeric_data[col])
         ax.set_xlabel("Index", fontsize=12, labelpad=6)
-        ax.set_ylabel(line_col, fontsize=13, labelpad=6)
-        ax.set_title(f"Trend of {line_col}", fontsize=14, pad=10)
+        ax.set_ylabel(col, fontsize=13, labelpad=6)
+        ax.set_title(f"Trend of {col}", fontsize=14, pad=10)
         ax.grid(True)
         st.pyplot(fig, use_container_width=True)
 
     # ---- HISTOGRAM ----
     elif chart_type == "Histogram":
         st.subheader("Histogram")
-        hist_col = st.sidebar.selectbox("Column", numeric_data.columns)
+        col = st.sidebar.selectbox("Column", numeric_data.columns)
 
         fig, ax = plt.subplots(figsize=(9, 5))
-        ax.hist(numeric_data[hist_col].dropna(), bins=25)
-        ax.set_xlabel(hist_col, fontsize=13, labelpad=8)
+        ax.hist(numeric_data[col].dropna(), bins=25)
+        ax.set_xlabel(col, fontsize=13, labelpad=8)
         ax.set_ylabel("Frequency", fontsize=13, labelpad=8)
-        ax.set_title(f"Distribution of {hist_col}", fontsize=14, pad=12)
+        ax.set_title(f"Distribution of {col}", fontsize=14, pad=12)
         ax.grid(True)
         st.pyplot(fig, use_container_width=True)
+
 
     # -----------------------
     # Correlation Heatmap
