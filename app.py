@@ -44,17 +44,15 @@ if menu == "Dataset Overview":
 
 # Visualizations
 elif menu == "Visualizations":
-    st.header("Visualizations")
+    st.header("📊 Pollution Visualizations (Bhutan)")
 
     viz_type = st.selectbox(
-        "Choose Visualization Type:",
+        "Choose chart type:",
         [
-            "Correlation Heatmap",
-            "Line Chart",
-            "Bar Chart",
-            "Area Chart",
-            "Histogram",
-            "Scatter Plot"
+            "Pollution Trend Over Time",
+            "Pollution Type Comparison",
+            "Region-wise Pollution Levels",
+            "Pollution Range View",
         ]
     )
 
