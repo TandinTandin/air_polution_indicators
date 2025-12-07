@@ -6,9 +6,6 @@ import seaborn as sns
 
 st.title("Air Pollution Indicators Dashboard (Bhutan)")
 
-# ----------------------------
-# Load Dataset
-# ----------------------------
 @st.cache_resource
 def load_data():
     file_path = "data/air_pollution_indicators_btn.csv"   # adjust path if needed
@@ -17,17 +14,11 @@ def load_data():
 
 data = load_data()
 
-# ----------------------------
-# Sidebar Menu
-# ----------------------------
 menu = st.sidebar.selectbox(
     "Navigate",
     ["Dataset Overview", "Visualizations"]
 )
 
-# ----------------------------
-# Dataset Overview Section
-# ----------------------------
 if menu == "Dataset Overview":
     st.header("Dataset Overview")
     st.dataframe(data.head())
@@ -47,9 +38,6 @@ if menu == "Dataset Overview":
                 st.write(f"### {col}")
                 st.bar_chart(data[col].value_counts())
 
-# ----------------------------
-# Visualizations Section
-# ----------------------------
 elif menu == "Visualizations":
     st.header("📊 Pollution Visualizations (Bhutan)")
 
@@ -63,19 +51,13 @@ elif menu == "Visualizations":
         ]
     )
 
-    # Ensure numeric columns are loaded
-    numeric_cols = ["Value"]  # main indicator column
+    numeric_cols = ["Value"]
 
-    # Ensure STARTYEAR exists
     if "STARTYEAR" in data.columns:
         data["STARTYEAR"] = pd.to_numeric(data["STARTYEAR"], errors="coerce")
 
-    # Filter out invalid Value entries
     data["Value"] = pd.to_numeric(data["Value"], errors="coerce")
 
-    # -----------------------------------------
-    # 1. Pollution Trend Over Time (Line Chart)
-    # -----------------------------------------
     if viz_type == "Pollution Trend Over Time":
         st.subheader("📈 Pollution Trend Over Time")
 
@@ -95,9 +77,6 @@ elif menu == "Visualizations":
             plt.title(f"Trend Over Time: {selected_indicator}")
             st.pyplot()
 
-    # -----------------------------------------
-    # 2. Pollution Type Comparison (Bar Chart)
-    # -----------------------------------------
     elif viz_type == "Pollution Type Comparison":
         st.subheader("📊 Indicator Comparison")
 
@@ -110,9 +89,6 @@ elif menu == "Visualizations":
         plt.title("Top 10 Indicators by Average Value")
         st.pyplot()
 
-    # -----------------------------------------
-    # 3. Region-wise Pollution Levels
-    # -----------------------------------------
     elif viz_type == "Region-wise Pollution Levels":
         st.subheader("🌍 Region-wise Pollution Levels")
 
@@ -128,9 +104,6 @@ elif menu == "Visualizations":
             plt.title("Average Pollution Levels by Region")
             st.pyplot()
 
-    # -----------------------------------------
-    # 4. Pollution Range View (Low–High)
-    # -----------------------------------------
     elif viz_type == "Pollution Range View":
         st.subheader("📉 Low–High Value Range")
 
