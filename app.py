@@ -1,190 +1,152 @@
-# app.py
 import streamlit as st
 import pandas as pd
-import altair as alt
-from pathlib import Path
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
 
-st.set_page_config(page_title="Air Pollution Dashboard (Bhutan)", layout="wide")
 st.title("Air Pollution Indicators Dashboard (Bhutan)")
-st.write("Focused Visualizations: Bar Chart & Line Chart — with color options")
 
-# ---------------------------
-# Load data (try local path first, else allow upload)
-# ---------------------------
-@st.cache_data
-def load_from_path(path: str):
-    return pd.read_csv(path)
+# ----------------------------
+# Load Dataset
+# ----------------------------
+@st.cache_resource
+def load_data():
+    file_path = "data/air_pollution_indicators_btn.csv"   # adjust path if needed
+    df = pd.read_csv(file_path)
+    return df
 
-df = None
-default_path = "air_pollution_indicators_btn (1).csv"  # adjust filename if different
+data = load_data()
 
-if Path(default_path).exists():
-    try:
-        df = load_from_path(default_path)
-    except Exception as e:
-        st.warning(f"Failed to load default file '{default_path}': {e}")
+# ----------------------------
+# Sidebar Menu
+# ----------------------------
+menu = st.sidebar.selectbox(
+    "Navigate",
+    ["Dataset Overview", "Visualizations"]
+)
 
-if df is None:
-    st.info("Upload the air pollution CSV (or place it in app folder with name "
-            "'air_pollution_indicators_btn (1).csv').")
-    uploaded = st.file_uploader("Upload CSV", type=["csv"])
-    if uploaded is not None:
-        df = pd.read_csv(uploaded)
+# ----------------------------
+# Dataset Overview Section
+# ----------------------------
+if menu == "Dataset Overview":
+    st.header("Dataset Overview")
+    st.dataframe(data.head())
 
-if df is None:
-    st.stop()  # no data to work with
+    st.header("Summary Statistics")
+    st.dataframe(data.describe(include="all"))
 
-# ---------------------------
-# Normalize & prepare columns
-# ---------------------------
-# Show original columns for debugging if needed
-# st.write("Columns:", df.columns.tolist())
+    st.header("Column Information")
+    st.write(data.dtypes)
 
-# Expected columns based on your dataset: adjust if different
-# Prefer STARTYEAR for x-axis; fall back to YEAR (DISPLAY) if needed.
-if "STARTYEAR" in df.columns:
-    df["Year"] = pd.to_numeric(df["STARTYEAR"], errors="coerce")
-elif "YEAR (DISPLAY)" in df.columns:
-    # try extracting numeric year from YEAR (DISPLAY)
-    df["Year"] = pd.to_numeric(df["YEAR (DISPLAY)"].astype(str).str.extract(r"(\d{4})")[0], errors="coerce")
-else:
-    # fallback: try any column that looks like year
-    df["Year"] = pd.to_numeric(df.filter(regex=r"year", axis=1).iloc[:, 0], errors="coerce")
+    categorical_cols = data.select_dtypes(include=['object']).columns
 
-# Indicator column (use GHO (DISPLAY) if present)
-if "GHO (DISPLAY)" in df.columns:
-    df["Indicator"] = df["GHO (DISPLAY)"].astype(str)
-elif "Indicator Name" in df.columns:
-    df["Indicator"] = df["Indicator Name"].astype(str)
-else:
-    # fallback: first text column
-    text_cols = df.select_dtypes(include=["object"]).columns
-    df["Indicator"] = df[text_cols[0]].astype(str) if len(text_cols) > 0 else "Indicator"
+    if len(categorical_cols) > 0:
+        st.subheader("Categorical Distributions")
+        for col in categorical_cols:
+            if data[col].nunique() < 30:
+                st.write(f"### {col}")
+                st.bar_chart(data[col].value_counts())
 
-# Numeric Value column
-if "Value" in df.columns:
-    df["ValueNum"] = pd.to_numeric(df["Value"], errors="coerce")
-elif "Numeric" in df.columns:
-    df["ValueNum"] = pd.to_numeric(df["Numeric"], errors="coerce")
-else:
-    # try to find any numeric column besides Year
-    numeric_cols = df.select_dtypes(include=["number"]).columns.tolist()
-    df["ValueNum"] = df[numeric_cols[0]] if len(numeric_cols) > 0 else pd.NA
-
-# Drop rows without year or value
-df = df.dropna(subset=["Year", "ValueNum"])
-
-# Convert Year to string for ordinal x-axis (keeps spacing even)
-df["YearStr"] = df["Year"].astype(int).astype(str)
-
-# ---------------------------
-# Sidebar controls
-# ---------------------------
-st.sidebar.header("Controls")
-menu = st.sidebar.radio("Go to", ["Home", "Dataset", "Visualizations"])
-color = st.sidebar.selectbox("Choose color", ["steelblue", "seagreen", "orange", "crimson", "purple", "gray"])
-top_n = st.sidebar.slider("Number of indicators to show in bar chart (top by avg value)", 3, 30, 10)
-
-# ---------------------------
-# Home
-# ---------------------------
-if menu == "Home":
-    st.subheader("About")
-    st.write("""
-        This dashboard uses WHO-style air pollution indicators for Bhutan.
-        Under *Visualizations* you can choose an indicator and view either a bar chart
-        (values by year) or a line chart (trend over time). Use the sidebar to pick colors.
-    """)
-    st.write("Dataset rows:", len(df))
-
-# ---------------------------
-# Dataset preview
-# ---------------------------
-elif menu == "Dataset":
-    st.subheader("Dataset Preview (first 200 rows)")
-    st.dataframe(df.head(200))
-
-# ---------------------------
-# Visualizations: Bar & Line only
-# ---------------------------
+# ----------------------------
+# Visualizations Section
+# ----------------------------
 elif menu == "Visualizations":
-    st.subheader("Visualizations")
+    st.header("📊 Pollution Visualizations (Bhutan)")
 
-    # Selection of indicators
-    indicator_list = df["Indicator"].dropna().unique()
-    selected_indicator = st.selectbox("Select an indicator (or choose 'All' for bar comparison):",
-                                      ["All"] + list(indicator_list))
+    viz_type = st.selectbox(
+        "Choose a visualization:",
+        [
+            "Pollution Trend Over Time",
+            "Pollution Type Comparison",
+            "Region-wise Pollution Levels",
+            "Pollution Range View",
+        ]
+    )
 
-    chart_type = st.selectbox("Chart Type", ["Bar Chart (value by year)", "Line Chart (trend)"])
+    # Ensure numeric columns are loaded
+    numeric_cols = ["Value"]  # main indicator column
 
-    # If All + Bar Chart: show top-N indicators by average value
-    if selected_indicator == "All" and chart_type.startswith("Bar"):
-        st.write(f"### Top {top_n} Indicators by Average Value")
-        avg_vals = (df.groupby("Indicator")["ValueNum"]
-                      .mean()
-                      .dropna()
-                      .sort_values(ascending=False)
-                      .head(top_n)
-                      .reset_index())
-        avg_vals["IndicatorShort"] = avg_vals["Indicator"].str.slice(0, 120)  # avoid extremely long labels
+    # Ensure STARTYEAR exists
+    if "STARTYEAR" in data.columns:
+        data["STARTYEAR"] = pd.to_numeric(data["STARTYEAR"], errors="coerce")
 
-        chart = (
-            alt.Chart(avg_vals)
-            .mark_bar()
-            .encode(
-                y=alt.Y("IndicatorShort:N", sort='-x', title="Indicator"),
-                x=alt.X("ValueNum:Q", title="Average Value"),
-                tooltip=[alt.Tooltip("Indicator:N"), alt.Tooltip("ValueNum:Q", format=".3f")]
-            )
-            .properties(width=900, height=50 + 40 * len(avg_vals))
-            .configure_axis(labelFontSize=12, titleFontSize=13)
-            .configure_view(strokeWidth=0)
-        )
-        # apply color
-        chart = chart.configure_mark(color=color)
-        st.altair_chart(chart, use_container_width=True)
+    # Filter out invalid Value entries
+    data["Value"] = pd.to_numeric(data["Value"], errors="coerce")
 
-    else:
-        # Filter to the chosen indicator
-        df_sel = df[df["Indicator"] == selected_indicator] if selected_indicator != "All" else df.copy()
-        if df_sel.empty:
-            st.warning("No data available for that selection.")
+    # -----------------------------------------
+    # 1. Pollution Trend Over Time (Line Chart)
+    # -----------------------------------------
+    if viz_type == "Pollution Trend Over Time":
+        st.subheader("📈 Pollution Trend Over Time")
+
+        indicator_list = data["GHO (DISPLAY)"].dropna().unique()
+        selected_indicator = st.selectbox("Select Indicator:", indicator_list)
+
+        filtered = data[data["GHO (DISPLAY)"] == selected_indicator]
+        filtered = filtered.dropna(subset=["STARTYEAR", "Value"])
+
+        if filtered.empty:
+            st.error("No data available for this indicator.")
         else:
-            # Aggregate by year in case there are multiple rows per year
-            agg = (df_sel.groupby("YearStr", as_index=False)["ValueNum"]
-                   .mean()
-                   .sort_values(by="YearStr"))
+            plt.figure(figsize=(10, 5))
+            plt.plot(filtered["STARTYEAR"], filtered["Value"], marker="o")
+            plt.xlabel("Year")
+            plt.ylabel("Value")
+            plt.title(f"Trend Over Time: {selected_indicator}")
+            st.pyplot()
 
-            if chart_type.startswith("Bar"):
-                st.write(f"### Bar Chart — {selected_indicator}")
-                bar = (
-                    alt.Chart(agg)
-                    .mark_bar()
-                    .encode(
-                        x=alt.X("YearStr:O", title="Year"),
-                        y=alt.Y("ValueNum:Q", title="Value", scale=alt.Scale(nice=True)),
-                        tooltip=[alt.Tooltip("YearStr:N", title="Year"), alt.Tooltip("ValueNum:Q", title="Value", format=".3f")]
-                    )
-                    .properties(width=900, height=450)
-                )
-                bar = bar.configure_mark(color=color)
-                st.altair_chart(bar, use_container_width=True)
+    # -----------------------------------------
+    # 2. Pollution Type Comparison (Bar Chart)
+    # -----------------------------------------
+    elif viz_type == "Pollution Type Comparison":
+        st.subheader("📊 Indicator Comparison")
 
-            else:
-                st.write(f"### Line Chart — {selected_indicator}")
-                line = (
-                    alt.Chart(agg)
-                    .mark_line(point=True)
-                    .encode(
-                        x=alt.X("YearStr:O", title="Year"),
-                        y=alt.Y("ValueNum:Q", title="Value", scale=alt.Scale(nice=True)),
-                        tooltip=[alt.Tooltip("YearStr:N", title="Year"), alt.Tooltip("ValueNum:Q", title="Value", format=".3f")]
-                    )
-                    .properties(width=900, height=450)
-                )
-                line = line.configure_mark(color=color)
-                st.altair_chart(line, use_container_width=True)
+        indicator_avg = data.groupby("GHO (DISPLAY)")["Value"].mean().sort_values(ascending=False)
 
-    # show small data table for context
-    with st.expander("Show data used for this chart"):
-        st.dataframe(df_sel[["Indicator", "YearStr", "ValueNum"]].sort_values(["Indicator","YearStr"]).reset_index(drop=True))
+        plt.figure(figsize=(12, 6))
+        plt.bar(indicator_avg.index[:10], indicator_avg.values[:10])
+        plt.xticks(rotation=45, ha="right")
+        plt.ylabel("Average Value")
+        plt.title("Top 10 Indicators by Average Value")
+        st.pyplot()
+
+    # -----------------------------------------
+    # 3. Region-wise Pollution Levels
+    # -----------------------------------------
+    elif viz_type == "Region-wise Pollution Levels":
+        st.subheader("🌍 Region-wise Pollution Levels")
+
+        if "REGION (DISPLAY)" not in data.columns:
+            st.error("Region column missing in dataset")
+        else:
+            region_data = data.groupby("REGION (DISPLAY)")["Value"].mean()
+
+            plt.figure(figsize=(10, 5))
+            plt.bar(region_data.index, region_data.values)
+            plt.xticks(rotation=45)
+            plt.ylabel("Average Value")
+            plt.title("Average Pollution Levels by Region")
+            st.pyplot()
+
+    # -----------------------------------------
+    # 4. Pollution Range View (Low–High)
+    # -----------------------------------------
+    elif viz_type == "Pollution Range View":
+        st.subheader("📉 Low–High Value Range")
+
+        indicator_list = data["GHO (DISPLAY)"].dropna().unique()
+        indicator = st.selectbox("Choose Indicator:", indicator_list)
+
+        filtered = data[data["GHO (DISPLAY)"] == indicator]
+        filtered = filtered.dropna(subset=["STARTYEAR", "Low", "High"])
+
+        if filtered.empty:
+            st.warning("No range data available for this indicator.")
+        else:
+            plt.figure(figsize=(10, 5))
+            plt.fill_between(filtered["STARTYEAR"], filtered["Low"], filtered["High"], alpha=0.3)
+            plt.plot(filtered["STARTYEAR"], filtered["Value"], color="black")
+            plt.xlabel("Year")
+            plt.ylabel("Value")
+            plt.title(f"Value Range Over Time: {indicator}")
+            st.pyplot()
