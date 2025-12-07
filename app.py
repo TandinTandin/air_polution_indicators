@@ -6,35 +6,23 @@ import seaborn as sns
 
 st.title("Air Pollution Indicators Dashboard (Bhutan)")
 
-# ---------------------------------------------------------
 # Load Dataset
-# ---------------------------------------------------------
+
 @st.cache_resource
 def load_data():
-    file_path = "data/air_pollution_indicators_btn.csv"  # adjust path as needed
+    file_path = "data/air_pollution_indicators_btn.csv"
     df = pd.read_csv(file_path)
     return df
 
 data = load_data()
 
-# Convert key numeric fields
-data["Value"] = pd.to_numeric(data["Value"], errors="coerce")
-data["Low"] = pd.to_numeric(data["Low"], errors="coerce")
-data["High"] = pd.to_numeric(data["High"], errors="coerce")
-if "STARTYEAR" in data.columns:
-    data["STARTYEAR"] = pd.to_numeric(data["STARTYEAR"], errors="coerce")
-
-# ---------------------------------------------------------
-# Sidebar Navigation
-# ---------------------------------------------------------
+# Sidebar
 menu = st.sidebar.selectbox(
     "Navigate",
     ["Dataset Overview", "Visualizations"]
 )
 
-# ---------------------------------------------------------
-# Dataset Overview Section
-# ---------------------------------------------------------
+# Dataset Overview
 if menu == "Dataset Overview":
     st.header("Dataset Overview")
     st.dataframe(data.head())
@@ -50,18 +38,16 @@ if menu == "Dataset Overview":
     if len(categorical_cols) > 0:
         st.subheader("Categorical Distributions")
         for col in categorical_cols:
-            if data[col].nunique() < 30:
+            if data[col].nunique() < 30:   # avoid huge charts
                 st.write(f"### {col}")
                 st.bar_chart(data[col].value_counts())
 
-# ---------------------------------------------------------
-# Visualization Section
-# ---------------------------------------------------------
+# Visualizations
 elif menu == "Visualizations":
     st.header("📊 Pollution Visualizations (Bhutan)")
 
     viz_type = st.selectbox(
-        "Choose a visualization:",
+        "Choose chart type:",
         [
             "Pollution Trend Over Time",
             "Pollution Type Comparison",
@@ -70,89 +56,65 @@ elif menu == "Visualizations":
         ]
     )
 
-    # ---------------------------------------------------------
-    # 📈 1. Pollution Trend Over Time
-    # ---------------------------------------------------------
-    if viz_type == "Pollution Trend Over Time":
-        st.subheader("📈 Pollution Trend Over Time")
+    numeric_data = data.select_dtypes(include=['number'])
 
-        indicator_list = data["GHO (DISPLAY)"].dropna().unique()
-        selected_indicator = st.selectbox("Select Indicator:", indicator_list)
+    # Correlation Heatmap (Fixed)
+    if viz_type == "Correlation Heatmap":
+        st.subheader("Correlation Heatmap")
 
-        filtered = data[data["GHO (DISPLAY)"] == selected_indicator]
-        filtered = filtered.dropna(subset=["STARTYEAR", "Value"])
+        # Remove invalid numeric columns
+        cleaned_data = numeric_data.dropna(axis=1, how="all")
+        cleaned_data = cleaned_data.loc[:, cleaned_data.apply(pd.Series.nunique) > 1]
 
-        if filtered.empty:
-            st.error("No data available for this indicator.")
+        if cleaned_data.shape[1] < 2:
+            st.warning("Not enough valid numeric columns to generate a correlation heatmap.")
         else:
-            fig, ax = plt.subplots(figsize=(12, 6))
-            ax.plot(filtered["STARTYEAR"], filtered["Value"], marker="o")
-            ax.set_xlabel("Year")
-            ax.set_ylabel("Value")
-            ax.set_title(f"Trend Over Time: {selected_indicator}")
-            plt.tight_layout()
-            st.pyplot(fig)
+            corr = cleaned_data.corr()
 
-    # ---------------------------------------------------------
-    # 📊 2. Pollution Type Comparison (Improved Bar Chart)
-    # ---------------------------------------------------------
-    elif viz_type == "Pollution Type Comparison":
-        st.subheader("📊 Indicator Comparison (Top 10) — Improved")
+            plt.figure(figsize=(10, 6))
+            sns.heatmap(corr, annot=True, cmap="coolwarm")
+            st.pyplot()
 
-        indicator_avg = (
-            data.groupby("GHO (DISPLAY)")["Value"]
-            .mean()
-            .sort_values(ascending=False)
-            .head(10)
-        )
+    # Line Chart
+    elif viz_type == "Line Chart":
+        st.subheader("Line Chart")
 
-        fig, ax = plt.subplots(figsize=(12, 8))
-        ax.barh(indicator_avg.index, indicator_avg.values)
-        ax.set_xlabel("Average Value", fontsize=12)
-        ax.set_title("Top 10 Indicators by Average Value", fontsize=14)
-        ax.invert_yaxis()
-        plt.tight_layout()
-        st.pyplot(fig)
-
-    # ---------------------------------------------------------
-    # 🌍 3. Region-wise Pollution Levels
-    # ---------------------------------------------------------
-    elif viz_type == "Region-wise Pollution Levels":
-        st.subheader("🌍 Region-wise Pollution Levels")
-
-        if "REGION (DISPLAY)" not in data.columns:
-            st.error("Region column missing in dataset")
+        if numeric_data.empty:
+            st.warning("No numeric columns available for line chart.")
         else:
-            region_avg = data.groupby("REGION (DISPLAY)")["Value"].mean()
+            st.line_chart(numeric_data)
 
-            fig, ax = plt.subplots(figsize=(10, 6))
-            ax.bar(region_avg.index, region_avg.values)
-            ax.set_ylabel("Average Value")
-            ax.set_title("Average Pollution Levels by Region")
-            plt.xticks(rotation=30, ha="right")
-            plt.tight_layout()
-            st.pyplot(fig)
+    # Bar Chart
+    elif viz_type == "Bar Chart":
+        column = st.selectbox("Select a column", data.columns)
+        st.bar_chart(data[column])
 
-    # ---------------------------------------------------------
-    # 📉 4. Pollution Range View (Low–High Interval)
-    # ---------------------------------------------------------
-    elif viz_type == "Pollution Range View":
-        st.subheader("📉 Low–High Value Range")
-
-        indicator_list = data["GHO (DISPLAY)"].dropna().unique()
-        indicator = st.selectbox("Choose Indicator:", indicator_list)
-
-        filtered = data[data["GHO (DISPLAY)"] == indicator]
-        filtered = filtered.dropna(subset=["STARTYEAR", "Low", "High"])
-
-        if filtered.empty:
-            st.warning("No range data available for this indicator.")
+    # Area Chart
+    elif viz_type == "Area Chart":
+        if numeric_data.empty:
+            st.warning("No numeric columns available for area chart.")
         else:
-            fig, ax = plt.subplots(figsize=(12, 6))
-            ax.fill_between(filtered["STARTYEAR"], filtered["Low"], filtered["High"], alpha=0.3)
-            ax.plot(filtered["STARTYEAR"], filtered["Value"], color="black", marker="o")
-            ax.set_xlabel("Year")
-            ax.set_ylabel("Indicator Value")
-            ax.set_title(f"Value Range Over Time: {indicator}")
-            plt.tight_layout()
-            st.pyplot(fig)
+            st.area_chart(numeric_data)
+
+    # Histogram
+    elif viz_type == "Histogram":
+        if numeric_data.empty:
+            st.warning("No numeric columns available for histogram.")
+        else:
+            feature = st.selectbox("Select a numeric column", numeric_data.columns)
+            plt.hist(data[feature].dropna(), bins=20)
+            plt.xlabel(feature)
+            plt.ylabel("Count")
+            st.pyplot()
+            
+    # Scatter Plot
+    elif viz_type == "Scatter Plot":
+        if numeric_data.shape[1] < 2:
+            st.warning("At least two numeric columns are required for scatter plot.")
+        else:
+            x_axis = st.selectbox("X-axis:", numeric_data.columns)
+            y_axis = st.selectbox("Y-axis:", numeric_data.columns)
+            plt.scatter(data[x_axis], data[y_axis])
+            plt.xlabel(x_axis)
+            plt.ylabel(y_axis)
+            st.pyplot()
