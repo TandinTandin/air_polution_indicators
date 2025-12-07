@@ -1,88 +1,93 @@
 import streamlit as st
 import pandas as pd
-import matplotlib.pyplot as plt
+import altair as alt
+
+# -----------------------------------------------------------
+# 1. PAGE SETUP
+# -----------------------------------------------------------
+st.set_page_config(page_title="Air Pollution Dashboard", layout="wide")
 
 st.title("Air Pollution Indicators Dashboard (Bhutan)")
-st.write("### Focused Visualizations: Line Charts & Bar Charts")
 
-# ---------------------------------------------------------
-# Load Dataset
-# ---------------------------------------------------------
-@st.cache_resource
+
+# -----------------------------------------------------------
+# 2. LOAD DATA
+# -----------------------------------------------------------
+@st.cache_data
 def load_data():
-    file_path = "data/air_pollution_indicators_btn.csv"  # change if needed
-    df = pd.read_csv(file_path)
+    df = pd.read_csv("air_pollution_indicators_btn (1).csv")
     return df
 
-data = load_data()
+df = load_data()
 
-# Convert key fields to numeric
-data["Value"] = pd.to_numeric(data["Value"], errors="coerce")
-data["STARTYEAR"] = pd.to_numeric(data["STARTYEAR"], errors="coerce")
+st.sidebar.title("Navigation")
+menu = st.sidebar.radio("Go to", ["Home", "Dataset", "Visualizations"])
 
-# ---------------------------------------------------------
-# Sidebar Navigation
-# ---------------------------------------------------------
-menu = st.sidebar.selectbox(
-    "Navigate",
-    ["Dataset Overview", "Line Chart", "Bar Chart"]
-)
 
-# ---------------------------------------------------------
-# Dataset Overview
-# ---------------------------------------------------------
-if menu == "Dataset Overview":
-    st.header("Dataset Overview")
-    st.dataframe(data.head())
+# -----------------------------------------------------------
+# 3. HOME SECTION
+# -----------------------------------------------------------
+if menu == "Home":
+    st.subheader("Project Overview")
+    st.write("""
+        This dashboard visualizes air pollution indicators for Bhutan.
+        You can explore the dataset, generate bar charts and line charts,
+        and compare trends across years and indicators.
+    """)
 
-    st.write("### Summary Statistics")
-    st.dataframe(data.describe(include="all"))
 
-    st.write("### Column Information")
-    st.write(data.dtypes)
+# -----------------------------------------------------------
+# 4. DATASET SECTION
+# -----------------------------------------------------------
+elif menu == "Dataset":
+    st.subheader("Dataset Preview")
+    st.dataframe(df)
 
-# ---------------------------------------------------------
-# LINE CHART
-# ---------------------------------------------------------
-elif menu == "Line Chart":
-    st.header("📈 Line Chart: Pollution Trend Over Time")
 
-    indicator_list = data["GHO (DISPLAY)"].dropna().unique()
-    selected_indicator = st.selectbox("Select Indicator:", indicator_list)
+# -----------------------------------------------------------
+# 5. VISUALIZATION SECTION (Bar + Line Charts Only)
+# -----------------------------------------------------------
+elif menu == "Visualizations":
+    st.subheader("Visualizations")
+    
+    # Dropdowns
+    indicator = st.selectbox("Select Indicator", df["Indicator Name"].unique())
+    chart_type = st.selectbox("Chart Type", ["Bar Chart", "Line Chart"])
 
-    filtered = data[data["GHO (DISPLAY)"] == selected_indicator]
-    filtered = filtered.dropna(subset=["STARTYEAR", "Value"])
+    # Filter data by indicator
+    df_filtered = df[df["Indicator Name"] == indicator]
 
-    if filtered.empty:
-        st.error("No data available for this indicator.")
+    # Ensure proper numeric sorting of years
+    df_filtered = df_filtered.sort_values(by="Year")
+
+    # BAR CHART
+    if chart_type == "Bar Chart":
+        st.write("### Bar Chart: Value Over Time")
+
+        bar = (
+            alt.Chart(df_filtered)
+            .mark_bar(size=25)
+            .encode(
+                x=alt.X("Year:O", title="Year", axis=alt.Axis(labelAngle=0)),
+                y=alt.Y("Value:Q", title="Value", scale=alt.Scale(nice=True)),
+                tooltip=["Year", "Value"]
+            )
+            .properties(width=800, height=450)
+        )
+        st.altair_chart(bar, use_container_width=True)
+
+    # LINE CHART
     else:
-        fig, ax = plt.subplots(figsize=(12, 6))
-        ax.plot(filtered["STARTYEAR"], filtered["Value"], marker="o")
-        ax.set_xlabel("Year")
-        ax.set_ylabel("Value")
-        ax.set_title(f"Trend Over Time: {selected_indicator}")
-        plt.tight_layout()
+        st.write("### Line Chart: Value Over Time")
 
-        st.pyplot(fig)
-
-# ---------------------------------------------------------
-# BAR CHART
-# ---------------------------------------------------------
-elif menu == "Bar Chart":
-    st.header("📊 Bar Chart: Top 10 Indicators")
-
-    indicator_avg = (
-        data.groupby("GHO (DISPLAY)")["Value"]
-        .mean()
-        .sort_values(ascending=False)
-        .head(10)
-    )
-
-    fig, ax = plt.subplots(figsize=(12, 7))
-    ax.barh(indicator_avg.index, indicator_avg.values)
-    ax.set_xlabel("Average Value")
-    ax.set_title("Top 10 Indicators by Average Pollution Value")
-    ax.invert_yaxis()  # largest on top
-    plt.tight_layout()
-
-    st.pyplot(fig)
+        line = (
+            alt.Chart(df_filtered)
+            .mark_line(point=True)
+            .encode(
+                x=alt.X("Year:O", title="Year", axis=alt.Axis(labelAngle=0)),
+                y=alt.Y("Value:Q", title="Value", scale=alt.Scale(nice=True)),
+                tooltip=["Year", "Value"]
+            )
+            .properties(width=800, height=450)
+        )
+        st.altair_chart(line, use_container_width=True)
